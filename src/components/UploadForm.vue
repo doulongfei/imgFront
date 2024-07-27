@@ -88,7 +88,7 @@ props: {
         type: String,
         default: 'url',
         required: false
-    }, 
+    },
     uploadMethod: {
         type: String,
         default: 'drag',
@@ -130,7 +130,7 @@ methods: {
         formData.append('file', file.file)
         axios({
             url: '/upload' + '?authCode=' + cookies.get('authCode'),
-            method: 'post',
+            method: 'POST',
             data: formData,
             onUploadProgress: (progressEvent) => {
                 const percentCompleted = Math.round((progressEvent.loaded / progressEvent.total) * 100)
@@ -161,7 +161,7 @@ methods: {
         })
     },
     handleSuccess(response, file) {
-        try {     
+        try {
             const rootUrl = `${window.location.protocol}//${window.location.host}`
             this.fileList.find(item => item.uid === file.uid).url = rootUrl + response.data[0].src
             this.fileList.find(item => item.uid === file.uid).progreess = 100
@@ -297,9 +297,9 @@ methods: {
                     file.file = file
                     console.log(file)
                     if (this.beforeUpload(file)) {
-                        this.uploadFile({ file: file, 
-                            onProgress: (evt) => this.handleProgress(evt), 
-                            onSuccess: (response, file) => this.handleSuccess(response, file), 
+                        this.uploadFile({ file: file,
+                            onProgress: (evt) => this.handleProgress(evt),
+                            onSuccess: (response, file) => this.handleSuccess(response, file),
                             onError: (error, file) => this.handleError(error, file) })
                     }
                 } else {
@@ -315,7 +315,7 @@ methods: {
 }
 </script>
 
-<style scoped> 
+<style scoped>
 @keyframes breathe {
     0%, 100% {
     }
