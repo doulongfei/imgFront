@@ -1,8 +1,8 @@
 <template>
-    <div class="upload-form" @paste.native="handlePaste">
+    <div class="upload-form">
         <el-upload
             class="upload-card"
-            :class="{'is-uploading': uploading, 'upload-card-busy': fileList.length, 'paste-mode': uploadMethod === 'paste'}"
+            :class="{'is-uploading': uploading, 'upload-card-busy': fileList.length}"
             drag
             multiple
             :http-request="uploadFile"
@@ -14,20 +14,18 @@
             :show-file-list="false"
             accept="image/*, video/*"
             >
-            <el-icon class="el-icon--upload">
-                <CameraFilled v-if="uploadMethod === 'drag'" color="blanchedalmond"/>
-                <CopyDocument v-else color="blanchedalmond"/>
+            <el-icon class="el-icon--upload" :size="100">
+                <CameraFilled color="blanchedalmond"/>
             </el-icon>
-            <div class="el-upload__text" v-if="uploadMethod === 'drag'">拖拽 或 <em>点击上传</em></div>
-            <div class="el-upload__text" v-else>复制 <em>粘贴</em> 上传</div>
+            <div class="el-upload__text"><em>拖拽</em> <em>点击</em> 或 <em>Ctrl + V</em> 粘贴上传</div>
             <template #tip>
-                <div class="el-upload__tip">支持多文件上传，支持图片和视频，文件大小不超过5MB</div>
+                <div class="el-upload__tip">支持多文件上传，支持图片和视频，Telegram渠道不支持超过20MB</div>
             </template>
         </el-upload>
         <el-card class="upload-list-card" :class="{'upload-list-busy': fileList.length}">
             <div class="upload-list-container" :class="{'upload-list-busy': fileList.length}">
-                <el-scrollbar>
-                    <div class="upload-list-dashboard">
+                <el-scrollbar @scroll="handleScroll" ref="scrollContainer">
+                    <div class="upload-list-dashboard" :class="{ 'list-scrolled': listScrolled }">
                         <el-text class="upload-list-dashboard-title">
                             <el-icon><List /></el-icon>{{ uploadingCount + waitingCount }}
                             <el-icon><Checked /></el-icon>{{ uploadSuccessCount }}
@@ -35,28 +33,73 @@
                         </el-text>
                         <div class="upload-list-dashboard-action">
                             <el-button-group>
-                                <el-tooltip content="整体复制" placement="top">
-                                    <el-button type="primary" round @click="copyAll" alt="整体复制"><el-icon><Grid /></el-icon></el-button>
+                                <el-tooltip :disabled="disableTooltip" content="整体复制" placement="top">
+                                    <el-button type="primary" round @click="copyAll" alt="整体复制">
+                                        <font-awesome-icon icon="copy" />
+                                    </el-button>
                                 </el-tooltip>
-                                <el-tooltip content="清空列表" placement="top">
-                                    <el-button type="primary" round @click="clearFileList"><el-icon><CircleClose /></el-icon></el-button>
+                                <el-tooltip :disabled="disableTooltip" content="失败重试" placement="top">
+                                    <el-button type="primary" @click="retryError">
+                                        <font-awesome-icon icon="redo" />
+                                    </el-button>
+                                </el-tooltip>
+                                <el-tooltip :disabled="disableTooltip" content="清空列表" placement="top" style="border: none;">
+                                    <el-dropdown>
+                                        <el-button type="primary" round style="outline: none; border-right: none;">
+                                            <font-awesome-icon icon="trash-alt" />
+                                        </el-button>
+                                        <template v-slot:dropdown>
+                                            <el-dropdown-menu slot="dropdown">
+                                                <el-dropdown-item @click="clearFileList">清空全部</el-dropdown-item>
+                                                <el-dropdown-item @click="clearSuccessList">清空已上传</el-dropdown-item>
+                                            </el-dropdown-menu>
+                                        </template>
+                                    </el-dropdown>
                                 </el-tooltip>
                             </el-button-group>
                         </div>
                     </div>
-                    <div class="upload-list-item" v-for="file in fileList" :key="file.name" :span="8">
-                        <img
-                            style="width: 10vw; border-radius: 12px;"
-                            :src="file.url"
-                            @error="file.url = 'https://imgbed.sanyue.site/file/b6a4a65b4edba4377492e.png'"
+                    <div class="upload-list-item" v-for="file in fileList.slice().reverse()" :key="file.name" :span="8">
+                        <a :href="file.url" target="_blank">
+                            <!-- 判断文件类型是否为视频 -->
+                            <video
+                                v-if="isVideo(file.name)"
+                                style="width: 10vw; border-radius: 12px;"
+                                autoplay
+                                muted
+                                playsinline
+                                loop
                             >
-                        </img>
+                                <source :src="file.url" type="video/mp4" />
+                                Your browser does not support the video tag.
+                            </video>
+                            <!-- 判断文件类型是否为图片 -->
+                            <img
+                                v-else
+                                style="width: 10vw; border-radius: 12px;"
+                                :src="file.url"
+                                @error="file.url = require('@/assets/404.png')"
+                            />
+                        </a>
                         <div class="upload-list-item-content">
                             <el-text class="upload-list-item-name" truncated>{{ file.name }}</el-text>
                             <div class="upload-list-item-url" v-if="file.status==='done'">
-                                <el-link :underline="false" :href="file.url" target="_blank">
-                                    <el-text class="upload-list-item-url-text" truncated>{{ file.url }}</el-text>
-                                </el-link>
+                                <div class="upload-list-item-url-row">
+                                    <el-input v-model="file.finalURL" readonly @click="selectAllText" :size="urlSize">
+                                        <template #prepend>URL</template>
+                                    </el-input>
+                                    <el-input v-model="file.mdURL" readonly @click="selectAllText" :size="urlSize">
+                                        <template #prepend>MarkDown</template>
+                                    </el-input>
+                                </div>
+                                <div class="upload-list-item-url-row">
+                                    <el-input v-model="file.htmlURL" readonly @click="selectAllText" :size="urlSize">
+                                        <template #prepend>HTML</template>
+                                    </el-input>
+                                    <el-input v-model="file.ubbURL" readonly @click="selectAllText" :size="urlSize">
+                                        <template #prepend>BBCode</template>
+                                    </el-input>
+                                </div>
                             </div>
                             <div class="upload-list-item-progress" v-else>
                                 <el-progress :percentage="file.progreess" :status="file.status" :show-text="false"/>
@@ -80,6 +123,7 @@
 <script>
 import axios from 'axios'
 import cookies from 'vue-cookies'
+import * as imageConversion from 'image-conversion'
 
 export default {
 name: 'UploadForm',
@@ -89,9 +133,44 @@ props: {
         default: 'url',
         required: false
     },
-    uploadMethod: {
+    customerCompress: {
+        type: Boolean,
+        default: true,
+        required: false
+    },
+    compressQuality: {
+        type: Number,
+        default: 4,
+        required: false
+    },
+    compressBar: {
+        type: Number,
+        default: 5,
+        required: false
+    },
+    serverCompress: {
+        type: Boolean,
+        default: true,
+        required: false
+    },
+    uploadChannel: {
         type: String,
-        default: 'drag',
+        default: 'telegram',
+        required: false
+    },
+    uploadNameType: {
+        type: String,
+        default: 'default',
+        required: false
+    },
+    useCustomUrl: {
+        type: String,
+        default: 'false',
+        required: false
+    },
+    customUrlPrefix: {
+        type: String,
+        default: '',
         required: false
     }
 },
@@ -99,8 +178,62 @@ data() {
     return {
         fileList: [],
         uploading: false,
-        maxUploading: 10,
-        waitingList: []
+        maxUploading: 6,
+        waitingList: [],
+        exceptionList: [],
+        listScrolled: false,
+        fileListLength: 0,
+        uploadCount: 0
+    }
+},
+watch: {
+    fileList: {
+        handler() {
+            if (this.fileList.length > this.fileListLength) {
+                this.$nextTick(() => {
+                    setTimeout(() => {
+                        // this.$refs.scrollContainer.setScrollTop(this.$refs.scrollContainer.wrapRef.scrollHeight) // 滚动到底部
+                        this.$refs.scrollContainer.setScrollTop(0) // 滚动到顶部
+                    }, 100)
+                })
+            }
+            this.fileListLength = this.fileList.length
+        },
+        deep: true
+    },
+    useCustomUrl: {
+        handler() {
+            if (this.useCustomUrl === 'true') {
+                this.fileList.forEach(item => {
+                    item.finalURL = this.customUrlPrefix + item.srcID
+                    item.mdURL = `![${item.name}](${this.customUrlPrefix + item.srcID})`
+                    item.htmlURL = `<img src="${this.customUrlPrefix + item.srcID}" alt="${item.name}" width=100% />`
+                    item.ubbURL = `[img]${this.customUrlPrefix + item.srcID}[/img]`
+                })
+            } else {
+                const rootUrl = `${window.location.protocol}//${window.location.host}/file/`
+                this.fileList.forEach(item => {
+                    item.finalURL = rootUrl + item.srcID
+                    item.mdURL = `![${item.name}](${rootUrl + item.srcID})`
+                    item.htmlURL = `<img src="${rootUrl + item.srcID}" alt="${item.name}" width=100% />`
+                    item.ubbURL = `[img]${rootUrl + item.srcID}[/img]`
+                })
+            }
+        },
+        immediate: true
+    },
+    customUrlPrefix: {
+        handler() {
+            if (this.useCustomUrl === 'true') {
+                this.fileList.forEach(item => {
+                    item.finalURL = this.customUrlPrefix + item.srcID
+                    item.mdURL = `![${item.name}](${this.customUrlPrefix + item.srcID})`
+                    item.htmlURL = `<img src="${this.customUrlPrefix + item.srcID}" alt="${item.name}" width=100% />`
+                    item.ubbURL = `[img]${this.customUrlPrefix + item.srcID}[/img]`
+                })
+            }
+        },
+        immediate: true
     }
 },
 computed: {
@@ -115,10 +248,27 @@ computed: {
     },
     waitingCount() {
         return this.waitingList.length
+    },
+    urlSize() {
+        // 移动端为small
+        return window.innerWidth < 768 ? 'small' : 'default'
+    },
+    disableTooltip() {
+        return window.innerWidth < 768
     }
+},
+mounted() {
+    document.addEventListener('paste', this.handlePaste)
+},
+beforeUnmount() {
+    document.removeEventListener('paste', this.handlePaste)
 },
 methods: {
     uploadFile(file) {
+        // 如果fileList中不存在该文件，说明已被删除，直接返回
+        if (!this.fileList.find(item => item.uid === file.file.uid)) {
+            return
+        }
         if (this.uploadingCount > this.maxUploading) {
             this.waitingList.push(file)
             this.fileList.find(item => item.uid === file.file.uid).status = 'waiting'
@@ -128,9 +278,11 @@ methods: {
         }
         const formData = new FormData()
         formData.append('file', file.file)
+        // 判断是否需要服务端压缩
+        const needServerCompress = this.fileList.find(item => item.uid === file.file.uid).serverCompress
         axios({
-            url: '/upload' + '?authCode=' + cookies.get('authCode'),
-            method: 'POST',
+            url: '/upload' + '?authCode=' + cookies.get('authCode') + '&serverCompress=' + needServerCompress + '&uploadChannel=' + this.uploadChannel + '&uploadNameType=' + this.uploadNameType,
+            method: 'post',
             data: formData,
             onUploadProgress: (progressEvent) => {
                 const percentCompleted = Math.round((progressEvent.loaded / progressEvent.total) * 100)
@@ -145,6 +297,7 @@ methods: {
                 this.$message.error('认证状态错误！')
                 this.$router.push('/login')
             } else {
+                this.exceptionList.push(file)
                 file.onError(err, file.file)
             }
         }).finally(() => {
@@ -161,8 +314,16 @@ methods: {
         })
     },
     handleSuccess(response, file) {
-        try {
-            this.fileList.find(item => item.uid === file.uid).url = response.data.data.url
+        try {     
+            const rootUrl = this.useCustomUrl === 'true'? this.customUrlPrefix : `${window.location.protocol}//${window.location.host}/file/`
+            // 从response.data[0].src中去除/file/前缀
+            const srcID = response.data[0].src.replace('/file/', '')
+            this.fileList.find(item => item.uid === file.uid).url = `${window.location.protocol}//${window.location.host}/file/` + srcID
+            this.fileList.find(item => item.uid === file.uid).finalURL = rootUrl + srcID
+            this.fileList.find(item => item.uid === file.uid).mdURL = `![${file.name}](${rootUrl + srcID})`
+            this.fileList.find(item => item.uid === file.uid).htmlURL = `<img src="${rootUrl + srcID}" alt="${file.name}" width=100% />`
+            this.fileList.find(item => item.uid === file.uid).ubbURL = `[img]${rootUrl + srcID}[/img]`
+            this.fileList.find(item => item.uid === file.uid).srcID = srcID
             this.fileList.find(item => item.uid === file.uid).progreess = 100
             this.fileList.find(item => item.uid === file.uid).status = 'success'
             this.$message({
@@ -171,9 +332,9 @@ methods: {
             })
             setTimeout(() => {
                 this.fileList.find(item => item.uid === file.uid).status = 'done'
-            }, 3000)
+            }, 1000)
         } catch (error) {
-            this.$message.error(file.name + '上传失败' + JSON.stringify(error))
+            this.$message.error(file.name + '上传失败')
             this.fileList.find(item => item.uid === file.uid).status = 'exception'
         } finally {
             if (this.uploadingCount + this.waitingCount === 0) {
@@ -206,13 +367,15 @@ methods: {
             return
         }
         if (this.selectedUrlForm === 'url') {
-            navigator.clipboard.writeText(file.url)
+            navigator.clipboard.writeText(file.finalURL)
         } else if (this.selectedUrlForm === 'md') {
-            navigator.clipboard.writeText(`![${file.name}](${file.url})`)
+            navigator.clipboard.writeText(file.mdURL)
         } else if (this.selectedUrlForm === 'html') {
-            navigator.clipboard.writeText(`<img src="${file.url}" alt="${file.name}">`)
+            navigator.clipboard.writeText(file.htmlURL)
+        } else if (this.selectedUrlForm === 'ubb') {
+            navigator.clipboard.writeText(file.ubbURL)
         } else {
-            navigator.clipboard.writeText(file.url)
+            navigator.clipboard.writeText(file.finalURL)
         }
         this.$message({
             type: 'success',
@@ -220,22 +383,80 @@ methods: {
         })
     },
     beforeUpload(file) {
-        const isLt5M = file.size / 1024 / 1024 < 5
-        if (!isLt5M) {
-            this.$message.error('上传文件大小不能超过 5MB!')
-            return false
-        } else {
-            this.uploading = true
-            const fileUrl = URL.createObjectURL(file)
-            this.fileList.push({
-                uid: file.uid,
-                name: file.name,
-                url: fileUrl,
-                status: 'uploading',
-                progreess: 0
-            })
-            return true
-    }
+        return new Promise((resolve, reject) => {
+            // 客户端压缩条件：1.文件类型为图片 2.开启客户端压缩，且文件大小大于压缩阈值；或为Telegram渠道且文件大小大于20MB
+            const needCustomCompress = file.type.includes('image') && ((this.customerCompress && file.size / 1024 / 1024 > this.compressBar) || (this.uploadChannel === 'telegram' && file.size / 1024 / 1024 > 20))
+            const isLtLim = file.size / 1024 / 1024 < 20 || this.uploadChannel !== 'telegram'
+
+            const pushFileToQueue = (file, serverCompress) => {
+                const fileUrl = URL.createObjectURL(file)
+                this.fileList.push({
+                    uid: file.uid,
+                    name: file.name,
+                    url: fileUrl,
+                    finalURL: '',
+                    mdURL: '',
+                    htmlURL: '',
+                    ubbURL: '',
+                    srcID: '',
+                    status: 'uploading',
+                    progreess: 0,
+                    serverCompress: serverCompress
+                })
+                resolve(file)
+            }
+
+            if (needCustomCompress) {
+                //尝试压缩图片
+                imageConversion.compressAccurately(file, 1024 * this.compressQuality).then((res) => {
+                    //如果压缩后大于20MB，且上传渠道为telegram，则不上传
+                    if (res.size / 1024 / 1024 > 20 && this.uploadChannel === 'telegram') {
+                        this.$message.error(file.name + '压缩后文件过大，无法上传!')
+                        reject('文件过大')
+                    }
+                    this.uploading = true
+                    //将res包装成新的file
+                    const newFile = new File([res], file.name, { type: res.type })
+                    newFile.uid = file.uid
+                    
+                    const myUploadCount = this.uploadCount++
+
+                    //开启服务端压缩条件：1.开启服务端压缩 2.文件大小小于10MB 3.上传渠道为Telegram
+                    const needServerCompress = this.serverCompress && newFile.size / 1024 / 1024 < 10 && this.uploadChannel === 'telegram'
+
+                    if (myUploadCount === 0) {
+                        pushFileToQueue(newFile, needServerCompress)
+                    } else {
+                        setTimeout(() => {
+                            pushFileToQueue(newFile, needServerCompress)
+                            this.uploadCount--
+                        }, 300 * myUploadCount)
+                    }
+                }).catch((err) => {
+                    this.$message.error(file.name + '压缩失败，无法上传!')
+                    reject(err)
+                })
+            } else if (isLtLim) {
+                this.uploading = true
+                
+                const myUploadCount = this.uploadCount++
+
+                // 开启服务端压缩条件：1.上传渠道为Telegram 2.开启服务端压缩 3.如果为图片，则文件大小小于10MB，否则不限制大小
+                const needServerCompress = this.uploadChannel === 'telegram' && this.serverCompress && (file.type.includes('image') ? file.size / 1024 / 1024 < 10 : true)
+
+                if (myUploadCount === 0) {
+                    pushFileToQueue(file, needServerCompress)
+                } else {
+                    setTimeout(() => {
+                        pushFileToQueue(file, needServerCompress)
+                        this.uploadCount--
+                    }, 300 * myUploadCount)
+                }
+            } else {
+                this.$message.error(file.name + '文件过大，无法上传!')
+                reject('文件过大')
+            }
+        })
     },
     handleProgress(event) {
         this.fileList.find(item => item.uid === event.file.uid).progreess = event.percent
@@ -244,28 +465,35 @@ methods: {
         if (this.selectedUrlForm === 'url') {
             const urls = this.fileList.map(item => {
                 if (item.status === 'done' || item.status === 'success') {
-                    return item.url
+                    return item.finalURL
                 }
             }).join('\n')
             navigator.clipboard.writeText(urls)
         } else if (this.selectedUrlForm === 'md') {
             const urls = this.fileList.map(item => {
                 if (item.status === 'done' || item.status === 'success') {
-                    return `![${item.name}](${item.url})`
+                    return item.mdURL
                 }
             }).join('\n')
             navigator.clipboard.writeText(urls)
         } else if (this.selectedUrlForm === 'html') {
             const urls = this.fileList.map(item => {
                 if (item.status === 'done' || item.status === 'success') {
-                    return `<img src="${item.url}" alt="${item.name}">`
+                    return item.htmlURL
+                }
+            }).join('\n')
+            navigator.clipboard.writeText(urls)
+        } else if (this.selectedUrlForm === 'ubb') {
+            const urls = this.fileList.map(item => {
+                if (item.status === 'done' || item.status === 'success') {
+                    return item.ubbURL
                 }
             }).join('\n')
             navigator.clipboard.writeText(urls)
         } else {
             const urls = this.fileList.map(item => {
                 if (item.status === 'done' || item.status === 'success') {
-                    return item.url
+                    return item.finalURL
                 }
             }).join('\n')
             navigator.clipboard.writeText(urls)
@@ -276,14 +504,36 @@ methods: {
         })
     },
     clearFileList() {
-        this.fileList = []
-        this.$message({
-            type: 'info',
-            message: '列表已清空'
-        })
+        if (this.fileList.length > 0) {
+            this.fileList = []
+            this.$message({
+                type: 'success',
+                message: '文件列表已清空'
+            })
+        } else {
+            this.$message({
+                type: 'info',
+                message: '文件列表为空'
+            })
+        }
+    },
+    clearSuccessList() {
+        if (this.uploadSuccessCount > 0) {
+            this.fileList = this.fileList.filter(item => item.status !== 'done' && item.status !== 'success')
+            this.$message({
+                type: 'success',
+                message: '成功上传文件已清空'
+            })
+        } else {
+            this.$message({
+                type: 'info',
+                message: '成功上传文件为空'
+            })
+        }
     },
     handlePaste(event) {
-        if (this.uploadMethod !== 'paste') {
+        // 当粘贴位置是文本框时，不执行该操作
+        if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
             return
         }
         const items = event.clipboardData.items
@@ -294,12 +544,19 @@ methods: {
                 if (file.type.includes('image') || file.type.includes('video')) {
                     file.uid = Date.now() + i
                     file.file = file
-                    console.log(file)
-                    if (this.beforeUpload(file)) {
-                        this.uploadFile({ file: file,
-                            onProgress: (evt) => this.handleProgress(evt),
-                            onSuccess: (response, file) => this.handleSuccess(response, file),
-                            onError: (error, file) => this.handleError(error, file) })
+                    //接收beforeUpload的Promise对象
+                    const checkResult = this.beforeUpload(file)
+                    if (checkResult instanceof Promise) {
+                        checkResult.then((newFile) => {
+                            if (newFile instanceof File) {
+                                this.uploadFile({ file: newFile, 
+                                    onProgress: (evt) => this.handleProgress(evt), 
+                                    onSuccess: (response, file) => this.handleSuccess(response, file), 
+                                    onError: (error, file) => this.handleError(error, file) })
+                            }
+                        }).catch((err) => {
+                            console.log(err)
+                        })
                     }
                 } else {
                     this.$message({
@@ -307,14 +564,146 @@ methods: {
                         message: '粘贴板中的文件不是图片或视频'
                     })
                 }
+            } else if (items[i].kind === 'string') {
+                items[i].getAsString((text) => {
+                    const urlPattern = /^(https?:\/\/[^\s$.?#].[^\s]*)$/;
+                    let fileName = '';
+                    if (urlPattern.test(text)) {
+                        fetch('/api/fetchRes', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ url: text })
+                        }).then(response => {
+                            const contentType = response.headers.get('content-type');
+                            if (response.status == 200 && (contentType.includes('image') || contentType.includes('video'))) {
+                                // 提取文件名
+                                const disposition = response.headers.get('Content-Disposition');
+                                if (disposition) {
+                                    const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                                    const filenameStarRegex = /filename\*\s*=\s*UTF-8''([^;\n]*)/; // 处理 filename*
+
+                                    let matches = filenameRegex.exec(disposition);
+                                    if (matches != null && matches[1]) {
+                                        fileName = matches[1].replace(/['"]/g, '');
+                                        // 尝试解码
+                                        try {
+                                            fileName = decodeURIComponent(fileName);
+                                        } catch (e) {
+                                            fileName = '';
+                                        }
+                                    } 
+                                    if (fileName === '') {
+                                        matches = filenameStarRegex.exec(disposition); // 尝试匹配 filename*
+                                        if (matches != null && matches[1]) {
+                                            fileName = decodeURIComponent(matches[1]);
+                                        }
+                                    }
+                                }
+                                // 尝试从URL中提取文件名
+                                if (fileName === '') {
+                                    const url = new URL(text);
+                                    fileName = url.pathname.split('/').pop();
+                                }
+                                // 未提取到文件名，使用默认文件名
+                                if (fileName === '') {
+                                    // 获取文件后缀
+                                    const url = new URL(text);
+                                    let extension = url.pathname.split('.').pop();
+                                    // 判断后缀是否有效
+                                    if (!['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'mp4', 'webm', 'ogg', 'mkv'].includes(extension)) {
+                                        extension = 'jpeg'; // 默认为jpeg
+                                    }
+                                    fileName = 'PastedFile' + Date.now() + i + '.' + extension;
+                                }
+                                return response.blob();
+                            } else {
+                                throw new Error('URL地址的内容不是图片或视频');
+                            }
+                        })
+                        .then(blob => {
+                            const file = new File([blob], fileName, { type: blob.type });
+                            file.uid = Date.now() + i;
+                            file.file = file;
+                            //接收beforeUpload的Promise对象
+                            const checkResult = this.beforeUpload(file);
+                            if (checkResult instanceof Promise) {
+                                checkResult.then((newFile) => {
+                                    if (newFile instanceof File) {
+                                        this.uploadFile({ file: newFile, 
+                                            onProgress: (evt) => this.handleProgress(evt), 
+                                            onSuccess: (response, file) => this.handleSuccess(response, file), 
+                                            onError: (error, file) => this.handleError(error, file) });
+                                    }
+                                }).catch((err) => {
+                                    console.log(err);
+                                });
+                            }
+                        })
+                        .catch(error => {
+                            this.$message({
+                                type: 'warning',
+                                message: '粘贴板中的URL地址的内容不是图片或视频'
+                            });
+                        });
+                    }
+                });
             }
+        }
+    },
+    selectAllText(event) {
+        // 复制到剪贴板
+        navigator.clipboard.writeText(event.target.value)
+            .then(() => {
+                this.$message({
+                    type: 'success',
+                    message: '复制成功'
+                });
+            })
+            .catch(() => {
+                this.$message({
+                    type: 'error',
+                    message: '复制失败'
+                });
+            });
+    },
+    // 判断是否为图片类型
+    isImage(fileName) {
+      const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+      const extension = fileName.split('.').pop().toLowerCase();
+      return imageExtensions.includes(extension);
+    },
+    // 判断是否为视频类型
+    isVideo(fileName) {
+      const videoExtensions = ['mp4', 'webm', 'ogg', 'mkv'];
+      const extension = fileName.split('.').pop().toLowerCase();
+      return videoExtensions.includes(extension);
+    },
+    handleScroll(event) {
+        this.listScrolled = event.scrollTop > 0 && this.fileList.length > 0
+    },
+    retryError() {
+        if (this.exceptionList.length > 0) {
+            this.exceptionList.forEach(file => {
+                this.uploadFile({ file: file.file, 
+                    onProgress: (evt) => this.handleProgress(evt), 
+                    onSuccess: (response, file) => this.handleSuccess(response, file), 
+                    onError: (error, file) => this.handleError(error, file) });
+            });
+            this.exceptionList = []
+        } else {
+            this.$message({
+                type: 'info',
+                message: '无上传失败文件'
+            })
         }
     }
 }
 }
 </script>
 
-<style scoped>
+<style scoped> 
 @keyframes breathe {
     0%, 100% {
     }
@@ -338,13 +727,22 @@ methods: {
     align-items: center;
     justify-content: center;
     border-radius: 15px;
-    opacity: 0.8;
     background-color: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(10px);
+    border: 1px solid #327ecc50;
+    box-shadow: 1px 2px 5px 1px #327ecc8c;
 }
 .upload-list-container {
     width: 55vw;
     height: 7vh;
+}
+@media (max-width: 768px) {
+    .upload-list-card {
+        width: 70vw;
+    }
+    .upload-list-container {
+        width: 70vw;
+    }
 }
 .upload-list-card.upload-list-busy {
     height: 35vh;
@@ -362,21 +760,41 @@ methods: {
     border-radius: 15px;
 }
 .upload-list-item-name {
-    font-size: small;
+    font-size: medium;
     font-weight: bold;
     width: 28vw;
+    margin-bottom: 5px;
 }
 .upload-list-item-content {
     display: flex;
     flex-direction: column;
     margin-left: 10px;
 }
-.upload-list-item-url-text {
-    width: 28vw;
+.upload-list-item-url-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 38vw;
 }
 .upload-list-item-progress {
     margin-top: 3px;
     width: 28vw;
+}
+@media (max-width: 768px) {
+    .upload-list-item-name {
+        width: 32vw;
+        font-size: small;
+    }
+    .upload-list-item-content {
+        margin-left: 2px;
+    }
+    .upload-list-item-url-row {
+        width: 42vw;
+        flex-direction: column;
+    }
+    .upload-list-item-progress {
+        width: 32vw;
+    }
 }
 .upload-list-item-action {
     display: flex;
@@ -391,11 +809,13 @@ methods: {
     padding: 20px;
     background: none;
 }
+@media (max-width: 768px) {
+    .upload-card {
+        width: 70vw;
+    }
+}
 .upload-card-busy :deep(.el-upload-dragger) {
     height: 25vh;
-}
-.paste-mode :deep(.el-upload) {
-    pointer-events: none;
 }
 :deep(.el-upload-dragger)  {
     display: flex;
@@ -427,7 +847,7 @@ methods: {
     user-select: none;
 }
 .el-upload__tip {
-    font-size: small;
+    font-size: medium;
     color: antiquewhite;
     user-select: none;
 }
@@ -435,7 +855,17 @@ methods: {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px;
+    height: 7vh;
+    padding: 0 15px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    border-radius: 15px;
+    transition: all 0.3s ease;
+}
+.upload-list-dashboard.list-scrolled {
+    background-color: rgba(255, 255, 255, 0.7);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 .upload-list-dashboard-title {
     font-size: medium;
