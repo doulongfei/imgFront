@@ -69,7 +69,7 @@
                 <span class="section-title">文件命名方式</span>
             </div>
             <div class="section-content">
-                <el-radio-group :model-value="uploadNameType" @update:model-value="$emit('update:uploadNameType', $event)" class="radio-card-group grid-2x2">
+                <el-radio-group :model-value="uploadNameType" @update:model-value="$emit('update:uploadNameType', $event)" class="radio-card-group grid-naming">
                     <el-radio label="default" class="radio-card">
                         <font-awesome-icon icon="cog" class="radio-icon"/>
                         <span>默认</span>
@@ -85,6 +85,10 @@
                     <el-radio label="short" class="radio-card">
                         <font-awesome-icon icon="compress-alt" class="radio-icon"/>
                         <span>短链接</span>
+                    </el-radio>
+                    <el-radio label="ai" class="radio-card">
+                        <font-awesome-icon icon="brain" class="radio-icon"/>
+                        <span>AI智能</span>
                     </el-radio>
                 </el-radio-group>
             </div>

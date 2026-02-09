@@ -867,6 +867,22 @@ body {
         font-size: 13px;
         justify-content: center;
     }
+
+    /* 移动端命名方式网格布局 */
+    .radio-card-group.grid-naming {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    .radio-card-group.grid-naming .radio-card {
+        padding: 10px 12px;
+        font-size: 13px;
+        justify-content: center;
+    }
+
+    .radio-card-group.grid-naming .radio-card:nth-child(5) {
+        max-width: 100%;
+    }
 }
 
 /* 行内帮助图标 */
@@ -928,6 +944,44 @@ body {
     .radio-card-group.grid-2x2 .radio-card {
         justify-content: flex-start;
         padding-left: 20px;
+    }
+}
+
+/* 文件命名方式网格布局（5个选项：2x2 + 1居中） */
+.radio-card-group.grid-naming {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.radio-card-group.grid-naming .radio-card {
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 第5个选项横跨两列居中 */
+.radio-card-group.grid-naming .radio-card:nth-child(5) {
+    grid-column: 1 / -1;
+    max-width: 50%;
+    margin: 0 auto;
+}
+
+@media (min-width: 769px) {
+    .radio-card-group.grid-naming .radio-card {
+        justify-content: flex-start;
+        padding-left: 20px;
+    }
+
+    .radio-card-group.grid-naming .radio-card:nth-child(5) {
+        justify-content: center;
+        padding-left: 16px;
     }
 }
 
